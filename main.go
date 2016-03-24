@@ -2,13 +2,13 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
-	"errors"
 )
 
 const macPrefix = "MAC Address: "
@@ -25,6 +25,7 @@ func main() {
 	var networkAddress = flag.String("network", "192.168.0.0/24", "Network")
 	var knownMacFile = flag.String("file", "knownMacAddresses.csv", "Known MAC addresses csv file")
 	var tries = flag.Int("tries", 1, "Number of runs")
+	var nmapPath = flag.String("nmap", "nmap", "Location of nmap")
 	flag.Parse()
 
 	uniqueOwners := make(map[string]bool)
@@ -36,10 +37,11 @@ func main() {
 	}
 
 	for i := 0; i < *tries; i++ {
-		macAddresses, err := GetMacAddresses(*networkAddress)
+		macAddresses, err := getMacAddresses(*nmapPath, *networkAddress)
 
 		if err != nil {
 			log.Println(err)
+			return
 		}
 
 		owners := WhoIsHome(macAddresses, knownMacs)
@@ -75,18 +77,20 @@ func WhoIsHome(macAddresses []string, knownMacs map[string]*macRecord) []string 
 
 func readKnownMacs(file string) (map[string]*macRecord, error) {
 	f, err := os.Open(file)
-	macNames := make(map[string]*macRecord, 0)
+	defer f.Close()
 
 	if err != nil {
-		return macNames, err
+		return nil, err
 	}
 
 	r := csv.NewReader(f)
 	records, err := r.ReadAll()
 
 	if err != nil {
-		return macNames, err
+		return nil, err
 	}
+
+	macNames := make(map[string]*macRecord, 0)
 
 	for _, record := range records {
 		owner, name, mac := record[0], record[1], record[2]
@@ -98,9 +102,9 @@ func readKnownMacs(file string) (map[string]*macRecord, error) {
 	return macNames, nil
 }
 
-func GetMacAddresses(network string) ([]string, error) {
+func getMacAddresses(nmapPath, network string) ([]string, error) {
 	macs := make([]string, 0)
-	nmapResult, err := exec.Command("sudo", "nmap", "-sn", network).Output()
+	nmapResult, err := exec.Command(nmapPath, "-sn", network).Output()
 
 	if err != nil {
 		return macs, errors.New(fmt.Sprintf("%s: %s", "Error running nmap", err.Error()))
